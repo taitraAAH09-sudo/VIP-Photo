@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>公文標準格式 - 貴賓開幕站位產生器</title>
+    <style>
+        body { font-family: "Microsoft JhengHei", Arial, sans-serif; margin: 20px; background-color: #f0f2f5; }
+        h2 { color: #1e293b; margin-bottom: 5px; }
+        .hint { color: #64748b; font-size: 14px; margin-bottom: 20px; }
+        
+        .workspace { display: flex; gap: 20px; align-items: flex-start; }
+        .panel { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); box-sizing: border-box; }
+        
+        /* 左欄 */
+        .left-col { width: 300px; flex-shrink: 0; }
+        .config-group { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #e2e8f0; }
+        .config-title { font-weight: bold; margin-bottom: 10px; color: #334155; display: flex; justify-content: space-between; align-items: center; }
+        .config-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+        .config-row input { width: 70px; padding: 5px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; }
+        
+        .memory-btn-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 5px; }
+        .btn-sm { padding: 6px; font-size: 12px; border-radius: 4px; font-weight: normal; }
+        .btn-save { background: #64748b; }
+        .btn-save:hover { background: #475569; }
+        .btn-load { background: #0284c7; }
+        .btn-load:hover { background: #0369a1; }
+        .slot-status { font-size: 11px; color: #94a3b8; text-align: center; margin-bottom: 8px; }
+
+        /* 中欄 */
+        .main-col { flex-grow: 1; min-width: 550px; }
+        .stage-container { background: #1e293b; padding: 30px; border-radius: 12px; display: flex; flex-direction: column; gap: 25px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.2); min-height: 300px; }
+        .stage-row { display: flex; justify-content: center; gap: 12px; padding: 15px; border: 1px dashed #475569; border-radius: 8px; background: rgba(255,255,255,0.05); position: relative; min-height: 80px; align-items: center; }
+        .row-badge { position: absolute; left: 10px; top: -10px; background: #3b82f6; color: white; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: bold; }
+        
+        .seat-slot { background: rgba(255, 255, 255, 0.9); border: 2px dashed #94a3b8; width: 140px; height: 85px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 6px; position: relative; padding: 5px; box-sizing: border-box; transition: all 0.2s; }
+        .seat-slot:hover { border-color: #3b82f6; background: #ffffff; }
+        .seat-label { font-size: 11px; color: #94a3b8; position: absolute; top: 2px; font-weight: bold; pointer-events: none; }
+        
+        /* 右欄 */
+        .right-col { width: 340px; flex-shrink: 0; }
+        textarea { width: 100%; height: 180px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; font-size: 12px; resize: none; line-height: 1.4; }
+        .guest-pool { min-height: 250px; border: 2px dashed #cbd5e1; padding: 10px; border-radius: 8px; background: #f8fafc; }
+        
+        /* 姓名標籤 */
+        .guest-tag { background: #1e40af; color: white; padding: 6px 10px; margin: 5px; border-radius: 4px; display: block; cursor: move; font-size: 12px; line-height: 1.4; box-shadow: 0 2px 4px rgba(0,0,0,0.15); user-select: none; }
+        .guest-tag:active { opacity: 0.7; }
+        .seat-slot .guest-tag { width: 95%; text-align: center; margin: 0; padding: 4px; font-size: 11px; background: #0284c7; }
+        
+        button { color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; width: 100%; transition: background 0.2s; }
+        .btn-green { background: #10b981; margin-top: 10px; font-size: 16px; box-shadow: 0 4px 6px rgba(16,185,129,0.2); }
+        .btn-green:hover { background: #059669; }
+        .btn-blue { background: #3b82f6; }
+        .btn-blue:hover { background: #2563eb; }
+        .btn-orange { background: #f59e0b; margin-top: 10px; }
+        .btn-orange:hover { background: #d97706; }
+    </style>
+</head>
+<body>
+
+    <h2>🎭 貴賓開幕站位產生器 (自訂人数+橫排修正版)</h2>
+    <div class="hint">※ 支援隨時自訂每一排人數。已強制修正 Word 直排錯誤。網頁拖曳順序與 Word 完全一致。</div>
+
+    <div class="workspace">
+        
+        <div class="panel left-col">
+            <div class="config-group">
+                <div class="config-title">1. 配置舞台排數</div>
+                <div class="config-row">
+                    <label>總共排數：</label>
+                    <input type="number" id="rowCount" value="1" min="1" max="5" oninput="handleRowCountChange()">
+                </div>
+            </div>
+            
+            <div class="config-group">
+                <div class="config-title">2. 各排人數隨時調整</div>
+                <div id="rowPeopleConfig">
+                    </div>
+            </div>
+
+            <div class="config-group">
+                <div class="config-title">3. 記憶儲存槽 (暫存方案)</div>
+                <div class="memory-btn-group">
+                    <button onclick="saveToSlot(1)" class="btn-sm btn-save">💾 存桌 1</button>
+                    <button onclick="saveToSlot(2)" class="btn-sm btn-save">💾 存桌 2</button>
+                    <button onclick="saveToSlot(3)" class="btn-sm btn-save">💾 存桌 3</button>
+                </div>
+                <div class="memory-btn-group">
+                    <button onclick="loadFromSlot(1)" class="btn-sm btn-load">📂 讀桌 1</button>
+                    <button onclick="loadFromSlot(2)" class="btn-sm btn-load">📂 讀桌 2</button>
+                    <button onclick="loadFromSlot(3)" class="btn-sm btn-load">📂 讀桌 3</button>
+                </div>
+                <div id="slotStatus" class="slot-status">儲存槽皆為空</div>
+            </div>
+            
+            <button onclick="resetAllSeats()" class="btn-orange">🔄 重新歸零 / 重置</button>
+            <button onclick="exportToExactWord()" class="btn-green">⬇️ 生成公文標準 Word</button>
+        </div>
+
+        <div class="panel main-col">
+            <div style="font-weight: bold; margin-bottom: 5px; color: #1e293b;">4. 舞台站位可拖曳大畫布 (所見即所得)</div>
+            <div style="font-size: 12px; color: #475569; margin-bottom: 10px;">請直接按照最終希望在 Word 上看到的由左至右順序排定。</div>
+            <div id="stageMap" class="stage-container"></div>
+        </div>
+
+        <div class="panel right-col">
+            <div class="config-title">5. 編輯貴賓名單 (格式：公司或單位 姓名職稱)</div>
+            <div style="font-size: 11px; color:#64748b; margin-bottom:5px;">💡 請用「一個空格」分開【公司單位】與【人名職稱】：</div>
+            <textarea id="nameInput" placeholder="中華民國對外貿易發展協會 黃志芳董事長...">台灣包裝協會 郭豐標理事長
+農業部 林家榮主任秘書
+經濟部 何晉滄政務次長
+行政院 (待確認)
+中華民國對外貿易發展協會 黃志芳董事長
+中華民國總統府 何志偉副秘書長
+外交部 葛葆萱常務次長
+台灣食品暨製藥機械工業同業公會 宋奇沛理事長
+展昭國際企業股份有限公司 林茂廷總經理</textarea>
+            <button onclick="generateTags()" class="btn-blue">更新/刷新姓名標籤</button>
+            
+            <div style="font-weight: bold; margin-top: 15px; margin-bottom: 5px; font-size: 14px; color: #475569;">待安排人員：</div>
+            <div id="pool" class="guest-pool" ondragover="allowDrop(event)" ondrop="drop(event)"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // 核心全域變數，預設各排人數為 9
+        let rowCapabilities = [9, 9, 9, 9, 9]; 
+        let memorySlots = { 1: null, 2: null, 3: null };
+
+        window.onload = function() {
+            generateTags();
+            initRowsControl();
+        };
+
+        function handleRowCountChange() { 
+            initRowsControl(); 
+        }
+
+        // 🎯 重新補回：動態產生並維持「每排人數隨時改」的左側輸入框
+        function initRowsControl() {
+            const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            const configContainer = document.getElementById('rowPeopleConfig');
+            configContainer.innerHTML = '';
+            
+            for (let i = 1; i <= rowCount; i++) {
+                const currentVal = rowCapabilities[i - 1] || 9;
+                const div = document.createElement('div');
+                div.className = 'config-row';
+                div.innerHTML = `
+                    <label>第 ${i} 排人數：</label>
+                    <input type="number" id="peo_input_${i}" value="${currentVal}" min="1" max="15" oninput="handlePeopleCountChange(${i})">
+                `;
+                configContainer.appendChild(div);
+            }
+            renderStage();
+        }
+
+        // 🎯 重新補回：當你隨時修改某一排人數（例如 9 改成 5 或 10）時的重繪事件
+        function handlePeopleCountChange(rowIndex) {
+            const inputEl = document.getElementById(`peo_input_${rowIndex}`);
+            if (inputEl) { 
+                rowCapabilities[rowIndex - 1] = parseInt(inputEl.value) || 1; 
+            }
+            renderStage();
+        }
+
+        function renderStage() {
+            const stageMap = document.getElementById('stageMap');
+            const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            const savedSeats = {};
+            
+            // 暫存畫面上現有的人名標籤，避免增減人數時被洗掉
+            document.querySelectorAll('.stage-container .guest-tag').forEach(tag => {
+                savedSeats[tag.parentElement.id] = tag;
+            });
+            
+            stageMap.innerHTML = '';
+            for (let r = 1; r <= rowCount; r++) {
+                const seatCount = rowCapabilities[r - 1] || 9;
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'stage-row';
+                rowDiv.id = `row_wrapper_${r}`;
+                rowDiv.innerHTML = `<span class="row-badge">第 ${r} 排</span>`;
+                
+                for (let s = 1; s <= seatCount; s++) {
+                    const slotId = `slot_r${r}_s${s}`;
+                    const slot = document.createElement('div');
+                    slot.className = 'seat-slot';
+                    slot.id = slotId;
+                    slot.setAttribute('ondragover', 'allowDrop(event)');
+                    slot.setAttribute('ondrop', 'drop(event)');
+                    slot.innerHTML = `<span class="seat-label">位置 ${s}</span>`;
+                    
+                    if (savedSeats[slotId]) { 
+                        slot.appendChild(savedSeats[slotId]); 
+                    }
+                    rowDiv.appendChild(slot);
+                }
+                stageMap.appendChild(rowDiv);
+            }
+        }
+
+        function generateTags() {
+            const pool = document.getElementById('pool');
+            const lines = document.getElementById('nameInput').value.split('\n');
+            pool.innerHTML = ''; 
+            lines.forEach((name, index) => {
+                if(name.trim() !== "") {
+                    const tag = document.createElement('div');
+                    tag.className = 'guest-tag';
+                    tag.id = 'guest_' + index;
+                    tag.draggable = true;
+                    tag.innerText = name.trim();
+                    tag.ondragstart = drag;
+                    pool.appendChild(tag);
+                }
+            });
+        }
+
+        function resetAllSeats() {
+            const pool = document.getElementById('pool');
+            document.querySelectorAll('.stage-container .guest-tag').forEach(tag => { pool.appendChild(tag); });
+            renderStage();
+        }
+
+        function saveToSlot(slotId) {
+            const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            const currentLayout = { rowCount: rowCount, capabilities: [...rowCapabilities], assignments: {} };
+            document.querySelectorAll('.stage-container .guest-tag').forEach(tag => {
+                currentLayout.assignments[tag.parentElement.id] = tag.innerText;
+            });
+            memorySlots[slotId] = currentLayout;
+            updateSlotStatusLabel();
+            alert(`✅ 已存至【儲存槽 ${slotId}】`);
+        }
+
+        function loadFromSlot(slotId) {
+            const savedLayout = memorySlots[slotId];
+            if (!savedLayout) { alert(`❌ 儲存槽 ${slotId} 是空的！`); return; }
+            document.getElementById('rowCount').value = savedLayout.rowCount;
+            rowCapabilities = [...savedLayout.capabilities];
+            initRowsControl();
+            generateTags();
+            const poolTags = Array.from(document.querySelectorAll('#pool .guest-tag'));
+            for (const [sId, personName] of Object.entries(savedLayout.assignments)) {
+                const targetSlot = document.getElementById(sId);
+                if (targetSlot) {
+                    const matchedTag = poolTags.find(t => t.innerText === personName);
+                    if (matchedTag) { targetSlot.appendChild(matchedTag); }
+                }
+            }
+        }
+
+        function updateSlotStatusLabel() {
+            let statusText = [];
+            for(let i=1; i<=3; i++) { statusText.push(`槽${i}: ${memorySlots[i] ? '🔴有資料' : '⚪空'}`); }
+            document.getElementById('slotStatus').innerText = statusText.join(' | ');
+        }
+
+        function allowDrop(ev) { ev.preventDefault(); }
+        function drag(ev) { ev.dataTransfer.setData("text", ev.target.id); }
+        function drop(ev) {
+            ev.preventDefault();
+            var data = ev.dataTransfer.getData("text");
+            var target = ev.target;
+            if (!target.classList.contains('seat-slot') && target.id !== 'pool') { target = target.parentElement; }
+            if (target.classList.contains('seat-slot') && target.getElementsByClassName('guest-tag').length > 0) { return; }
+            target.appendChild(document.getElementById(data));
+        }
+
+        function getDynamicSeatText(row, seat) {
+            const el = document.getElementById(`slot_r${row}_s${seat}`);
+            if(!el) return '';
+            let text = el.innerText.replace(`位置 ${seat}`, '').trim();
+            return text;
+        }
+
+        function exportToExactWord() {
+            const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            const today = new Date().toLocaleDateString();
+            let allRowsHtml = '';
+
+            for (let r = 1; r <= rowCount; r++) {
+                const seatCount = rowCapabilities[r - 1] || 9;
+                
+                let rawList = [];
+                for (let s = 1; s <= seatCount; s++) {
+                    rawList.push(getDynamicSeatText(r, s)); 
+                }
+
+                if (rawList.every(x => x === '')) continue;
+
+                let numRowCells = '';
+                let nameRowCells = '';
+                let unitRowCells = '';
+
+                rawList.forEach((fullName, index) => {
+                    numRowCells += `<td class="num-cell">${index + 1}</td>`;
+
+                    if(!fullName) {
+                        nameRowCells += `<td class="name-cell">(空缺)</td>`;
+                        unitRowCells += `<td class="unit-cell"></td>`;
+                        return;
+                    }
+                    
+                    let parts = fullName.split(' ');
+                    let unit = parts[0] || '';
+                    let name = parts.slice(1).join(' ') || '';
+
+                    if(parts.length === 1) {
+                        name = parts[0];
+                        unit = '';
+                    }
+
+                    nameRowCells += `<td class="name-cell">${name}</td>`;
+                    unitRowCells += `<td class="unit-cell">${unit}</td>`;
+                });
+
+                allRowsHtml += `
+                    <div class="page-break">
+                        <h3>【 貴賓揭幕位置圖 - 第 ${r} 排 】</h3>
+                        <div class="screen-indicator">螢幕</div>
+                        <table border="1">
+                            <tr>${numRowCells}</tr>
+                            <tr>${nameRowCells}</tr>
+                            <tr>${unitRowCells}</tr>
+                        </table>
+                        <div class="audience-indicator">觀眾席</div>
+                    </div>
+                    <br><br>
+                `;
+            }
+
+            const wordContent = `
+                <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                <head>
+                    <meta charset='utf-8'>
+                    <title>台北國際食品系列展 貴賓站位圖</title>
+                    <style>
+                        body { font-family: 'DFKai-SB', 'PMingLiU', 'Arial', sans-serif; margin: 40px; }
+                        .title-main { font-size: 16pt; font-weight: bold; text-align: center; margin-bottom: 5px; }
+                        .title-sub { font-size: 16pt; font-weight: bold; text-align: center; margin-bottom: 5px; }
+                        .title-time { font-size: 12pt; text-align: center; margin-bottom: 30px; }
+                        
+                        .screen-indicator { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 15px; letter-spacing: 10px; }
+                        .audience-indicator { text-align: center; font-size: 14pt; font-weight: bold; margin-top: 15px; letter-spacing: 10px; }
+                        
+                        table { border-collapse: collapse; margin: auto; width: auto !important; }
+                        
+                        td { 
+                            border: 1px solid #000000; 
+                            text-align: center; 
+                            vertical-align: middle; 
+                            padding: 10px 15px; 
+                            white-space: nowrap !important; 
+                            mso-rotate: 0 !important; 
+                            writing-mode: lr-tb !important; 
+                        }
+                        
+                        .num-cell { font-size: 13pt; font-weight: bold; height: 30px; background-color: #f2f2f2; }
+                        .name-cell { font-size: 13pt; font-weight: bold; height: 45px; }
+                        .unit-cell { font-size: 11pt; color: #333333; height: 50px; }
+                        
+                        .page-break { page-break-after: always; }
+                    </style>
+                </head>
+                <body>
+                    <div class="title-main">台北國際食品系列展(Food Taipei Mega Shows)</div>
+                    <div class="title-sub">貴賓揭幕位置圖</div>
+                    <div class="title-time">6/22 1100</div>
+                    <hr style="border: 1px solid #000; margin-bottom: 30px;">
+                    
+                    ${allRowsHtml}
+                </body>
+                </html>
+            `;
+
+            const blob = new Blob(['\ufeff' + wordContent], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `台北食品展_開幕典禮_貴賓站位圖.doc`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
