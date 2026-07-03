@@ -54,6 +54,7 @@
         .btn-orange { background: #f59e0b; margin-top: 10px; }
         .btn-orange:hover { background: #d97706; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 </head>
 <body>
 
@@ -63,6 +64,12 @@
     <div class="workspace">
         
         <div class="panel left-col">
+            <div class="config-group">
+                <div class="config-title">0. 展覽名稱</div>
+                <div class="config-row" style="display:block;">
+                    <input type="text" id="examTitle" value="2026酷酷系列展" style="width:100%; box-sizing:border-box; padding:6px; border:1px solid #cbd5e1; border-radius:4px; text-align:center;">
+                </div>
+            </div>
             <div class="config-group">
                 <div class="config-title">1. 配置舞台排數</div>
                 <div class="config-row">
@@ -94,6 +101,7 @@
             
             <button onclick="resetAllSeats()" class="btn-orange">🔄 重新歸零 / 重置</button>
             <button onclick="exportToExactWord()" class="btn-green">⬇️ 生成公文標準 Word</button>
+            <button onclick="exportToExcel()" class="btn-green" style="background:#0284c7;">⬇️ 生成 Excel 檔</button>
         </div>
 
         <div class="panel main-col">
@@ -125,6 +133,37 @@
     <script>
         // 核心全域變數，預設各排人數為 9
         let rowCapabilities = [9, 9, 9, 9, 9]; 
+
+        // 依「中間為1，向外交錯左右」的禮賓排序規則，計算每個實體座位(s)對應的貴賓序號
+        // 奇數：正中間=1，1的左邊=2，右邊=3，再左=4，再右=5...
+        // 偶數：中間偏左=1，中間偏右=2，1的左邊=3，2的右邊=4，再左=5，再右=6...
+        function getProtocolLabels(seatCount) {
+            const labelAtSlot = new Array(seatCount + 1).fill(0); // 1-based，index=實體座位編號
+            if (seatCount <= 0) return labelAtSlot;
+            let left, right, rank = 1;
+            if (seatCount % 2 === 1) {
+                const center = (seatCount + 1) / 2;
+                labelAtSlot[center] = rank++;
+                left = center - 1; right = center + 1;
+            } else {
+                const leftC = seatCount / 2;
+                const rightC = leftC + 1;
+                labelAtSlot[leftC] = rank++;
+                labelAtSlot[rightC] = rank++;
+                left = leftC - 1; right = rightC + 1;
+            }
+            let toggle = 'left';
+            while (left >= 1 || right <= seatCount) {
+                if (toggle === 'left') {
+                    if (left >= 1) { labelAtSlot[left] = rank++; left--; }
+                    toggle = 'right';
+                } else {
+                    if (right <= seatCount) { labelAtSlot[right] = rank++; right++; }
+                    toggle = 'left';
+                }
+            }
+            return labelAtSlot;
+        }
         let memorySlots = { 1: null, 2: null, 3: null };
 
         window.onload = function() {
@@ -177,6 +216,7 @@
             stageMap.innerHTML = '';
             for (let r = 1; r <= rowCount; r++) {
                 const seatCount = rowCapabilities[r - 1] || 9;
+                const protocolLabels = getProtocolLabels(seatCount);
                 const rowDiv = document.createElement('div');
                 rowDiv.className = 'stage-row';
                 rowDiv.id = `row_wrapper_${r}`;
@@ -189,7 +229,7 @@
                     slot.id = slotId;
                     slot.setAttribute('ondragover', 'allowDrop(event)');
                     slot.setAttribute('ondrop', 'drop(event)');
-                    slot.innerHTML = `<span class="seat-label">位置 ${s}</span>`;
+                    slot.innerHTML = `<span class="seat-label">位置 ${protocolLabels[s]}</span>`;
                     
                     if (savedSeats[slotId]) { 
                         slot.appendChild(savedSeats[slotId]); 
@@ -210,7 +250,10 @@
                     tag.className = 'guest-tag';
                     tag.id = 'guest_' + index;
                     tag.draggable = true;
-                    tag.innerText = name.trim();
+                    const rawName = name.trim();
+                    tag.dataset.fullname = rawName;
+                    // 遇到空格自動斷行顯示（不影響底層資料，仍以空格分隔單位/姓名）
+                    tag.innerHTML = rawName.replace(/ /g, '<br>');
                     tag.ondragstart = drag;
                     pool.appendChild(tag);
                 }
@@ -227,7 +270,7 @@
             const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
             const currentLayout = { rowCount: rowCount, capabilities: [...rowCapabilities], assignments: {} };
             document.querySelectorAll('.stage-container .guest-tag').forEach(tag => {
-                currentLayout.assignments[tag.parentElement.id] = tag.innerText;
+                currentLayout.assignments[tag.parentElement.id] = tag.dataset.fullname || tag.innerText;
             });
             memorySlots[slotId] = currentLayout;
             updateSlotStatusLabel();
@@ -245,7 +288,7 @@
             for (const [sId, personName] of Object.entries(savedLayout.assignments)) {
                 const targetSlot = document.getElementById(sId);
                 if (targetSlot) {
-                    const matchedTag = poolTags.find(t => t.innerText === personName);
+                    const matchedTag = poolTags.find(t => (t.dataset.fullname || t.innerText) === personName);
                     if (matchedTag) { targetSlot.appendChild(matchedTag); }
                 }
             }
@@ -271,13 +314,27 @@
         function getDynamicSeatText(row, seat) {
             const el = document.getElementById(`slot_r${row}_s${seat}`);
             if(!el) return '';
-            let text = el.innerText.replace(`位置 ${seat}`, '').trim();
-            return text;
+            const tag = el.querySelector('.guest-tag');
+            if(!tag) return '';
+            return (tag.dataset.fullname || tag.innerText.replace(/\n/g, ' ')).trim();
+        }
+
+        function getTimestampSuffix() {
+            const d = new Date();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mi = String(d.getMinutes()).padStart(2, '0');
+            return `${mm}${dd}_${hh}${mi}`;
+        }
+
+        function xmlEscape(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
         function exportToExactWord() {
             const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
-            const today = new Date().toLocaleDateString();
+            const examTitle = (document.getElementById('examTitle').value || '').trim() || '展覽名稱';
             let allRowsHtml = '';
 
             for (let r = 1; r <= rowCount; r++) {
@@ -293,16 +350,20 @@
                 let numRowCells = '';
                 let nameRowCells = '';
                 let unitRowCells = '';
+                let colgroup = '';
+                const protocolLabels = getProtocolLabels(seatCount);
 
                 rawList.forEach((fullName, index) => {
-                    numRowCells += `<td class="num-cell">${index + 1}</td>`;
+                    colgroup += `<col style="width:1.8cm;">`;
+                    numRowCells += `<td class="num-cell" align="center" valign="middle">${protocolLabels[index + 1]}</td>`;
 
                     if(!fullName) {
-                        nameRowCells += `<td class="name-cell">(空缺)</td>`;
-                        unitRowCells += `<td class="unit-cell"></td>`;
+                        nameRowCells += `<td class="name-cell" align="center" valign="middle">(空缺)</td>`;
+                        unitRowCells += `<td class="unit-cell" align="center" valign="middle"></td>`;
                         return;
                     }
-                    
+
+                    // 遇到空格自動斷行：第一個空格前為單位，之後為姓名職稱
                     let parts = fullName.split(' ');
                     let unit = parts[0] || '';
                     let name = parts.slice(1).join(' ') || '';
@@ -312,19 +373,22 @@
                         unit = '';
                     }
 
-                    nameRowCells += `<td class="name-cell">${name}</td>`;
-                    unitRowCells += `<td class="unit-cell">${unit}</td>`;
+                    nameRowCells += `<td class="name-cell" align="center" valign="middle">${name}</td>`;
+                    unitRowCells += `<td class="unit-cell" align="center" valign="middle">${unit}</td>`;
                 });
 
                 allRowsHtml += `
                     <div class="page-break">
-                        <h3>【 貴賓揭幕位置圖 - 第 ${r} 排 】</h3>
-                        <div class="screen-indicator">螢幕</div>
-                        <table border="1">
+                        ${rowCount > 1 ? `<div class="row-label">第 ${r} 排</div>` : ''}
+                        <div class="backboard-indicator">背板</div>
+                        <center>
+                        <table border="1" cellspacing="0" cellpadding="2" align="center" style="table-layout:fixed; width:${seatCount * 1.8}cm; margin:0 auto;">
+                            <colgroup>${colgroup}</colgroup>
                             <tr>${numRowCells}</tr>
                             <tr>${nameRowCells}</tr>
                             <tr>${unitRowCells}</tr>
                         </table>
+                        </center>
                         <div class="audience-indicator">觀眾席</div>
                     </div>
                     <br><br>
@@ -335,42 +399,60 @@
                 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
                 <head>
                     <meta charset='utf-8'>
-                    <title>台北國際食品系列展 貴賓站位圖</title>
+                    <title>${examTitle} 貴賓站位圖</title>
+                    <!--[if gte mso 9]>
                     <style>
-                        body { font-family: 'DFKai-SB', 'PMingLiU', 'Arial', sans-serif; margin: 40px; }
-                        .title-main { font-size: 16pt; font-weight: bold; text-align: center; margin-bottom: 5px; }
-                        .title-sub { font-size: 16pt; font-weight: bold; text-align: center; margin-bottom: 5px; }
-                        .title-time { font-size: 12pt; text-align: center; margin-bottom: 30px; }
+                        @page Section1 {
+                            size: 21cm 29.7cm;
+                            mso-page-orientation: portrait;
+                            margin: 1cm;
+                        }
+                        div.Section1 { page: Section1; }
+                    </style>
+                    <![endif]-->
+                    <style>
+                        body { font-family: 'Microsoft JhengHei', 'DFKai-SB', 'PMingLiU', 'Arial', sans-serif; margin: 10px; }
+                        .title-main { font-size: 20pt; font-weight: bold; text-align: center; margin-bottom: 5px; }
+                        .title-sub { font-size: 18pt; font-weight: bold; text-align: center; margin-bottom: 25px; }
+                        .row-label { text-align: center; font-size: 12pt; font-weight: bold; margin-bottom: 8px; }
                         
-                        .screen-indicator { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 15px; letter-spacing: 10px; }
+                        .backboard-indicator { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 15px; letter-spacing: 10px; }
                         .audience-indicator { text-align: center; font-size: 14pt; font-weight: bold; margin-top: 15px; letter-spacing: 10px; }
                         
-                        table { border-collapse: collapse; margin: auto; width: auto !important; }
+                        table { border-collapse: collapse; table-layout: fixed; margin: 0 auto; }
                         
                         td { 
                             border: 1px solid #000000; 
                             text-align: center; 
                             vertical-align: middle; 
-                            padding: 10px 15px; 
-                            white-space: nowrap !important; 
-                            mso-rotate: 0 !important; 
-                            writing-mode: lr-tb !important; 
+                            mso-vertical-align: center;
                         }
                         
-                        .num-cell { font-size: 13pt; font-weight: bold; height: 30px; background-color: #f2f2f2; }
-                        .name-cell { font-size: 13pt; font-weight: bold; height: 45px; }
-                        .unit-cell { font-size: 11pt; color: #333333; height: 50px; }
+                        .num-cell { width: 1.8cm; height: 1cm; font-size: 12pt; font-weight: bold; background-color: #f2f2f2; }
+                        
+                        /* 直書，上下（欄內）與左右皆置中 */
+                        .name-cell, .unit-cell {
+                            width: 1.8cm;
+                            height: 8.0cm;
+                            layout-flow: vertical-ideographic;
+                            writing-mode: vertical-rl;
+                            text-orientation: upright;
+                            text-align: center;
+                            vertical-align: middle;
+                        }
+                        .name-cell { font-size: 18pt; font-weight: bold; }
+                        .unit-cell { font-size: 12pt; color: #333333; }
                         
                         .page-break { page-break-after: always; }
                     </style>
                 </head>
                 <body>
-                    <div class="title-main">台北國際食品系列展(Food Taipei Mega Shows)</div>
+                    <div class="Section1">
+                    <div class="title-main">${examTitle}</div>
                     <div class="title-sub">貴賓揭幕位置圖</div>
-                    <div class="title-time">6/22 1100</div>
-                    <hr style="border: 1px solid #000; margin-bottom: 30px;">
                     
                     ${allRowsHtml}
+                    </div>
                 </body>
                 </html>
             `;
@@ -379,11 +461,154 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `台北食品展_開幕典禮_貴賓站位圖.doc`;
+            a.download = `${examTitle}_揭幕合影圖${getTimestampSuffix()}.doc`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        async function exportToExcel() {
+            const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            const examTitle = (document.getElementById('examTitle').value || '').trim() || '展覽名稱';
+
+            // 先收集每排資料，並算出最大欄數
+            const rowsData = [];
+            let maxSeats = 1;
+            for (let r = 1; r <= rowCount; r++) {
+                const seatCount = rowCapabilities[r - 1] || 9;
+                let rawList = [];
+                for (let s = 1; s <= seatCount; s++) rawList.push(getDynamicSeatText(r, s));
+                if (rawList.every(x => x === '')) continue;
+                rowsData.push({ r, seatCount, rawList });
+                maxSeats = Math.max(maxSeats, seatCount);
+            }
+            if (rowsData.length === 0) { alert('尚未安排任何貴賓座位，無法產生檔案。'); return; }
+
+            if (typeof ExcelJS === 'undefined') {
+                alert('Excel 產生工具尚未載入完成（需要網路連線），請稍等幾秒後再試一次。');
+                return;
+            }
+
+            const COL_W_CHARS = 9;   // 約等於 1.8cm 欄寬
+            const ROW_H_PT = 227;    // 8.0cm ≈ 227pt
+            const thinBorder = { style: 'thin', color: { argb: 'FF000000' } };
+            const fullBorder = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
+
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('貴賓站位圖', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+
+            ws.columns = Array.from({ length: maxSeats }, () => ({ width: COL_W_CHARS }));
+
+            let rIdx = 1;
+
+            // 標題兩行
+            ws.mergeCells(rIdx, 1, rIdx, maxSeats);
+            let c = ws.getCell(rIdx, 1);
+            c.value = examTitle;
+            c.font = { name: 'Microsoft JhengHei', size: 20, bold: true };
+            c.alignment = { horizontal: 'center', vertical: 'middle' };
+            ws.getRow(rIdx).height = 30;
+            rIdx++;
+
+            ws.mergeCells(rIdx, 1, rIdx, maxSeats);
+            c = ws.getCell(rIdx, 1);
+            c.value = '貴賓揭幕位置圖';
+            c.font = { name: 'Microsoft JhengHei', size: 16, bold: true };
+            c.alignment = { horizontal: 'center', vertical: 'middle' };
+            ws.getRow(rIdx).height = 26;
+            rIdx++;
+
+            rIdx++; // 空一行
+
+            rowsData.forEach(({ r, seatCount, rawList }) => {
+                if (rowCount > 1) {
+                    ws.mergeCells(rIdx, 1, rIdx, maxSeats);
+                    c = ws.getCell(rIdx, 1);
+                    c.value = `第 ${r} 排`;
+                    c.font = { name: 'Microsoft JhengHei', size: 12, bold: true };
+                    c.alignment = { horizontal: 'center', vertical: 'middle' };
+                    rIdx++;
+                }
+
+                // 背板
+                ws.mergeCells(rIdx, 1, rIdx, maxSeats);
+                c = ws.getCell(rIdx, 1);
+                c.value = '背板';
+                c.font = { name: 'Microsoft JhengHei', size: 14, bold: true };
+                c.alignment = { horizontal: 'center', vertical: 'middle' };
+                rIdx++;
+
+                // 編號列（依禮賓排序：中間為1，向外交錯左右）
+                const numRow = rIdx;
+                const protocolLabels = getProtocolLabels(seatCount);
+                rawList.forEach((_, index) => {
+                    const cell = ws.getCell(numRow, index + 1);
+                    cell.value = protocolLabels[index + 1];
+                    cell.font = { name: 'Microsoft JhengHei', size: 12, bold: true };
+                    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+                    cell.border = fullBorder;
+                });
+                ws.getRow(numRow).height = 20;
+                rIdx++;
+
+                // 姓名職稱列（直書）
+                const nameRow = rIdx;
+                // 單位列（直書）
+                const unitRow = rIdx + 1;
+
+                rawList.forEach((fullName, index) => {
+                    const col = index + 1;
+                    let name = '(空缺)', unit = '';
+                    if (fullName) {
+                        let parts = fullName.split(' ');
+                        unit = parts[0] || '';
+                        name = parts.slice(1).join(' ') || '';
+                        if (parts.length === 1) { name = parts[0]; unit = ''; }
+                    }
+                    const nc = ws.getCell(nameRow, col);
+                    nc.value = name;
+                    nc.font = { name: 'Microsoft JhengHei', size: 14, bold: true };
+                    nc.alignment = { horizontal: 'center', vertical: 'top', textRotation: 'vertical' };
+                    nc.border = fullBorder;
+
+                    const uc = ws.getCell(unitRow, col);
+                    uc.value = unit;
+                    uc.font = { name: 'Microsoft JhengHei', size: 14 };
+                    uc.alignment = { horizontal: 'center', vertical: 'top', textRotation: 'vertical' };
+                    uc.border = fullBorder;
+                });
+                ws.getRow(nameRow).height = ROW_H_PT;
+                ws.getRow(unitRow).height = ROW_H_PT;
+                rIdx += 2;
+
+                // 觀眾席
+                ws.mergeCells(rIdx, 1, rIdx, maxSeats);
+                c = ws.getCell(rIdx, 1);
+                c.value = '觀眾席';
+                c.font = { name: 'Microsoft JhengHei', size: 14, bold: true };
+                c.alignment = { horizontal: 'center', vertical: 'middle' };
+                rIdx++;
+
+                rIdx++; // 空一行
+            });
+
+            const fileName = `${examTitle}_揭幕合影圖${getTimestampSuffix()}.xlsx`;
+            try {
+                const buffer = await wb.xlsx.writeBuffer();
+                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert('產生 Excel 檔案時發生錯誤：' + err.message);
+            }
         }
     </script>
 </body>
