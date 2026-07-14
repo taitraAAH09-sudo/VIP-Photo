@@ -25,6 +25,10 @@
         .btn-load { background: #0284c7; }
         .btn-load:hover { background: #0369a1; }
         .slot-status { font-size: 11px; color: #94a3b8; text-align: center; margin-bottom: 8px; }
+        .slot-row { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+        .slot-row .btn-sm { width: auto; flex: none; padding: 6px 8px; white-space: nowrap; }
+        .slot-name { flex: 1; min-width: 0; padding: 5px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; }
+        .slot-dot { flex: none; font-size: 12px; }
 
         /* 中欄 */
         .main-col { flex-grow: 1; min-width: 550px; }
@@ -86,16 +90,12 @@
 
             <div class="config-group">
                 <div class="config-title">3. 線上儲存槽 (雲端同步)</div>
-                <div class="memory-btn-group">
-                    <button onclick="saveToSlot(1)" class="btn-sm btn-save">💾 存檔 1</button>
-                    <button onclick="saveToSlot(2)" class="btn-sm btn-save">💾 存檔 2</button>
-                    <button onclick="saveToSlot(3)" class="btn-sm btn-save">💾 存檔 3</button>
-                </div>
-                <div class="memory-btn-group">
-                    <button onclick="loadFromSlot(1)" class="btn-sm btn-load">📂 讀取 1</button>
-                    <button onclick="loadFromSlot(2)" class="btn-sm btn-load">📂 讀取 2</button>
-                    <button onclick="loadFromSlot(3)" class="btn-sm btn-load">📂 讀取 3</button>
-                </div>
+                <div style="font-size:11px; color:#64748b; margin-bottom:6px;">💡 空格填人名（例：樺），存檔會掛名，避免互相覆蓋。</div>
+                <div class="slot-row"><button onclick="saveToSlot(1)" class="btn-sm btn-save">💾 存 1</button><button onclick="loadFromSlot(1)" class="btn-sm btn-load">📂 讀 1</button><input type="text" id="slotName_1" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_1">⚪</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(2)" class="btn-sm btn-save">💾 存 2</button><button onclick="loadFromSlot(2)" class="btn-sm btn-load">📂 讀 2</button><input type="text" id="slotName_2" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_2">⚪</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(3)" class="btn-sm btn-save">💾 存 3</button><button onclick="loadFromSlot(3)" class="btn-sm btn-load">📂 讀 3</button><input type="text" id="slotName_3" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_3">⚪</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(4)" class="btn-sm btn-save">💾 存 4</button><button onclick="loadFromSlot(4)" class="btn-sm btn-load">📂 讀 4</button><input type="text" id="slotName_4" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_4">⚪</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(5)" class="btn-sm btn-save">💾 存 5</button><button onclick="loadFromSlot(5)" class="btn-sm btn-load">📂 讀 5</button><input type="text" id="slotName_5" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_5">⚪</span></div>
                 <div id="slotStatus" class="slot-status">連線中…</div>
                 <button onclick="wipeAll()" class="btn-sm" style="background:#dc2626; width:100%; margin-top:4px;">🧹 洗白全部</button>
             </div>
@@ -153,10 +153,10 @@ const db = getDatabase(fb);
 const NODE = 'VIP_PHOTO/slots';
 window.fbSaveSlot = (slotId, data) => set(ref(db, NODE + '/' + slotId), data);
 window.fbClearAllSlots = () => remove(ref(db, NODE));
-window.fbSlotCache = { 1: null, 2: null, 3: null };
+window.fbSlotCache = { 1: null, 2: null, 3: null, 4: null, 5: null };
 onValue(ref(db, NODE), snap => {
     const d = snap.val() || {};
-    window.fbSlotCache = { 1: d['1'] || null, 2: d['2'] || null, 3: d['3'] || null };
+    window.fbSlotCache = { 1: d['1'] || null, 2: d['2'] || null, 3: d['3'] || null, 4: d['4'] || null, 5: d['5'] || null };
     if (typeof window.updateSlotStatusLabel === 'function') window.updateSlotStatusLabel();
 }, err => {
     const el = document.getElementById('slotStatus');
@@ -300,12 +300,22 @@ onValue(ref(db, NODE), snap => {
 
         async function saveToSlot(slotId) {
             const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            const nameEl = document.getElementById('slotName_' + slotId);
+            const slotName = nameEl ? nameEl.value.trim() : '';
+            // 檔位已有別人的掛名存檔 → 覆蓋前確認
+            const existing = (window.fbSlotCache || {})[slotId];
+            if (existing && existing.slotName && existing.slotName !== slotName) {
+                if (!confirm(`⚠️ 存檔 ${slotId} 目前是【${existing.slotName}】的存檔（${existing.savedAt || ''}）。\n\n確定要覆蓋嗎？`)) return;
+            } else if (existing && !existing.slotName && !confirm(`⚠️ 存檔 ${slotId} 已有資料（${existing.savedAt || ''}），確定要覆蓋嗎？`)) {
+                return;
+            }
             const currentLayout = {
                 rowCount: rowCount,
                 capabilities: [...rowCapabilities],
                 assignments: {},
                 nameList: document.getElementById('nameInput').value,
                 examTitle: document.getElementById('examTitle').value,
+                slotName: slotName,
                 savedAt: new Date().toLocaleString('zh-TW', { hour12: false })
             };
             document.querySelectorAll('.stage-container .guest-tag').forEach(tag => {
@@ -314,7 +324,7 @@ onValue(ref(db, NODE), snap => {
             if (typeof window.fbSaveSlot !== 'function') { alert('⚠️ 雲端尚未連線，請稍候再試'); return; }
             try {
                 await window.fbSaveSlot(slotId, currentLayout);
-                alert(`✅ 已線上存檔至【存檔 ${slotId}】\n（任何電腦開啟本頁都能讀取）`);
+                alert(`✅ 已線上存檔至【存檔 ${slotId}】` + (slotName ? `，掛名：${slotName}` : '') + `\n（任何電腦開啟本頁都能讀取）`);
             } catch (e) {
                 alert('❌ 線上存檔失敗：' + e.message);
             }
@@ -339,26 +349,34 @@ onValue(ref(db, NODE), snap => {
                     if (matchedTag) { targetSlot.appendChild(matchedTag); }
                 }
             }
-            alert(`📂 已讀取【存檔 ${slotId}】` + (savedLayout.savedAt ? `\n存檔時間：${savedLayout.savedAt}` : ''));
+            alert(`📂 已讀取【存檔 ${slotId}】` + (savedLayout.slotName ? `（${savedLayout.slotName}）` : '') + (savedLayout.savedAt ? `\n存檔時間：${savedLayout.savedAt}` : ''));
         }
 
         function updateSlotStatusLabel() {
             const cache = window.fbSlotCache || {};
-            let statusText = [];
-            for (let i = 1; i <= 3; i++) { statusText.push(`檔${i}: ${cache[i] ? '🔴有資料' : '⚪空'}`); }
-            document.getElementById('slotStatus').innerText = statusText.join(' | ');
+            let summary = [];
+            for (let i = 1; i <= 5; i++) {
+                const d = cache[i];
+                const dot = document.getElementById('slotDot_' + i);
+                if (dot) dot.textContent = d ? '🔴' : '⚪';
+                const nameEl = document.getElementById('slotName_' + i);
+                // 沒在打字時，自動顯示雲端上的掛名
+                if (nameEl && document.activeElement !== nameEl) nameEl.value = (d && d.slotName) ? d.slotName : '';
+                summary.push(`檔${i}:${d ? ((d.slotName || '有資料')) : '空'}`);
+            }
+            document.getElementById('slotStatus').innerText = summary.join(' | ');
         }
         window.updateSlotStatusLabel = updateSlotStatusLabel;
 
         // 🧹 洗白全部：清空舞台站位＋刪除三個線上存檔（名單文字保留），執行前再次確認
         async function wipeAll() {
-            if (!confirm('⚠️ 確定要「洗白全部」嗎？\n\n將會：\n1. 清空舞台上所有已排的名牌（退回待安排區）\n2. 刪除線上存檔 1、2、3\n\n（右側名單文字會保留）')) return;
-            if (!confirm('🛑 再次確認：線上存檔 1、2、3 將被永久刪除，無法復原。\n\n真的要洗白全部嗎？')) return;
+            if (!confirm('⚠️ 確定要「洗白全部」嗎？\n\n將會：\n1. 清空舞台上所有已排的名牌（退回待安排區）\n2. 刪除線上存檔 1～5\n\n（右側名單文字會保留）')) return;
+            if (!confirm('🛑 再次確認：線上存檔 1～5 將被永久刪除，無法復原。\n\n真的要洗白全部嗎？')) return;
             resetAllSeats();
             if (typeof window.fbClearAllSlots === 'function') {
                 try {
                     await window.fbClearAllSlots();
-                    alert('🧹 已洗白全部：舞台已清空，線上存檔 1、2、3 已刪除。');
+                    alert('🧹 已洗白全部：舞台已清空，線上存檔 1～5 已刪除。');
                 } catch (e) {
                     alert('舞台已清空，但刪除線上存檔失敗：' + e.message);
                 }
