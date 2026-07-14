@@ -85,22 +85,28 @@
             </div>
 
             <div class="config-group">
-                <div class="config-title">3. 記憶儲存槽 (暫存方案)</div>
+                <div class="config-title">3. 線上儲存槽 (雲端同步)</div>
                 <div class="memory-btn-group">
-                    <button onclick="saveToSlot(1)" class="btn-sm btn-save">💾 存桌 1</button>
-                    <button onclick="saveToSlot(2)" class="btn-sm btn-save">💾 存桌 2</button>
-                    <button onclick="saveToSlot(3)" class="btn-sm btn-save">💾 存桌 3</button>
+                    <button onclick="saveToSlot(1)" class="btn-sm btn-save">💾 存檔 1</button>
+                    <button onclick="saveToSlot(2)" class="btn-sm btn-save">💾 存檔 2</button>
+                    <button onclick="saveToSlot(3)" class="btn-sm btn-save">💾 存檔 3</button>
                 </div>
                 <div class="memory-btn-group">
-                    <button onclick="loadFromSlot(1)" class="btn-sm btn-load">📂 讀桌 1</button>
-                    <button onclick="loadFromSlot(2)" class="btn-sm btn-load">📂 讀桌 2</button>
-                    <button onclick="loadFromSlot(3)" class="btn-sm btn-load">📂 讀桌 3</button>
+                    <button onclick="loadFromSlot(1)" class="btn-sm btn-load">📂 讀取 1</button>
+                    <button onclick="loadFromSlot(2)" class="btn-sm btn-load">📂 讀取 2</button>
+                    <button onclick="loadFromSlot(3)" class="btn-sm btn-load">📂 讀取 3</button>
                 </div>
-                <div id="slotStatus" class="slot-status">儲存槽皆為空</div>
+                <div id="slotStatus" class="slot-status">連線中…</div>
+                <button onclick="wipeAll()" class="btn-sm" style="background:#dc2626; width:100%; margin-top:4px;">🧹 洗白全部</button>
             </div>
-            
+
             <button onclick="resetAllSeats()" class="btn-orange">🔄 重新歸零 / 重置</button>
             <button onclick="exportToExactWord()" class="btn-green">⬇️ 生成公文標準 Word</button>
+            <label style="display:flex; align-items:center; gap:8px; margin-top:12px; padding:10px; background:#FEF3C7; border:1px solid #F59E0B; border-radius:6px; font-size:13px; font-weight:bold; color:#92400E; cursor:pointer;">
+                <input type="checkbox" id="multiRowMode" style="width:18px; height:18px; cursor:pointer;">
+                超過兩排以上請打勾
+            </label>
+            <div style="font-size:11px; color:#94a3b8; margin-top:4px; line-height:1.5;">打勾後 Excel 會特化為整合站位圖（第一排在最下面、第三排在最上面，格內＝單位＋名字職稱）；Word 不受影響。</div>
             <button onclick="exportToExcel()" class="btn-green" style="background:#0284c7;">⬇️ 生成 Excel 檔</button>
         </div>
 
@@ -130,6 +136,33 @@
 
     </div>
 
+<script type="module">
+// ── 線上儲存槽：與座位系統共用同一個 Firebase 專案，節點 VIP_PHOTO/slots ──
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, onValue, set, remove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+const fb = initializeApp({
+    apiKey: "AIzaSyCo2eMHEHEfBQfWiVmQ6PhUsdeIM6eb57Q",
+    authDomain: "taitra-table.firebaseapp.com",
+    databaseURL: "https://taitra-table-default-rtdb.firebaseio.com",
+    projectId: "taitra-table",
+    storageBucket: "taitra-table.firebasestorage.app",
+    messagingSenderId: "802855818617",
+    appId: "1:802855818617:web:b7cf3b45e13b70ae660ba8"
+});
+const db = getDatabase(fb);
+const NODE = 'VIP_PHOTO/slots';
+window.fbSaveSlot = (slotId, data) => set(ref(db, NODE + '/' + slotId), data);
+window.fbClearAllSlots = () => remove(ref(db, NODE));
+window.fbSlotCache = { 1: null, 2: null, 3: null };
+onValue(ref(db, NODE), snap => {
+    const d = snap.val() || {};
+    window.fbSlotCache = { 1: d['1'] || null, 2: d['2'] || null, 3: d['3'] || null };
+    if (typeof window.updateSlotStatusLabel === 'function') window.updateSlotStatusLabel();
+}, err => {
+    const el = document.getElementById('slotStatus');
+    if (el) el.innerText = '⚠️ 雲端連線失敗';
+});
+</script>
     <script>
         // 核心全域變數，預設各排人數為 9
         let rowCapabilities = [9, 9, 9, 9, 9]; 
@@ -164,7 +197,6 @@
             }
             return labelAtSlot;
         }
-        let memorySlots = { 1: null, 2: null, 3: null };
 
         window.onload = function() {
             generateTags();
@@ -266,38 +298,73 @@
             renderStage();
         }
 
-        function saveToSlot(slotId) {
+        async function saveToSlot(slotId) {
             const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
-            const currentLayout = { rowCount: rowCount, capabilities: [...rowCapabilities], assignments: {} };
+            const currentLayout = {
+                rowCount: rowCount,
+                capabilities: [...rowCapabilities],
+                assignments: {},
+                nameList: document.getElementById('nameInput').value,
+                examTitle: document.getElementById('examTitle').value,
+                savedAt: new Date().toLocaleString('zh-TW', { hour12: false })
+            };
             document.querySelectorAll('.stage-container .guest-tag').forEach(tag => {
                 currentLayout.assignments[tag.parentElement.id] = tag.dataset.fullname || tag.innerText;
             });
-            memorySlots[slotId] = currentLayout;
-            updateSlotStatusLabel();
-            alert(`✅ 已存至【儲存槽 ${slotId}】`);
+            if (typeof window.fbSaveSlot !== 'function') { alert('⚠️ 雲端尚未連線，請稍候再試'); return; }
+            try {
+                await window.fbSaveSlot(slotId, currentLayout);
+                alert(`✅ 已線上存檔至【存檔 ${slotId}】\n（任何電腦開啟本頁都能讀取）`);
+            } catch (e) {
+                alert('❌ 線上存檔失敗：' + e.message);
+            }
         }
 
         function loadFromSlot(slotId) {
-            const savedLayout = memorySlots[slotId];
-            if (!savedLayout) { alert(`❌ 儲存槽 ${slotId} 是空的！`); return; }
+            const savedLayout = (window.fbSlotCache || {})[slotId];
+            if (!savedLayout) { alert(`❌ 線上存檔 ${slotId} 是空的！`); return; }
+            // ★ 先徹底清場：移除舞台上所有舊名牌，避免連續讀取不同存檔時殘留、疊加
+            document.querySelectorAll('.stage-container .guest-tag').forEach(t => t.remove());
             document.getElementById('rowCount').value = savedLayout.rowCount;
-            rowCapabilities = [...savedLayout.capabilities];
+            rowCapabilities = [...(savedLayout.capabilities || [9,9,9,9,9])];
+            if (savedLayout.examTitle !== undefined) document.getElementById('examTitle').value = savedLayout.examTitle;
+            if (savedLayout.nameList !== undefined) document.getElementById('nameInput').value = savedLayout.nameList;
             initRowsControl();
             generateTags();
             const poolTags = Array.from(document.querySelectorAll('#pool .guest-tag'));
-            for (const [sId, personName] of Object.entries(savedLayout.assignments)) {
+            for (const [sId, personName] of Object.entries(savedLayout.assignments || {})) {
                 const targetSlot = document.getElementById(sId);
                 if (targetSlot) {
                     const matchedTag = poolTags.find(t => (t.dataset.fullname || t.innerText) === personName);
                     if (matchedTag) { targetSlot.appendChild(matchedTag); }
                 }
             }
+            alert(`📂 已讀取【存檔 ${slotId}】` + (savedLayout.savedAt ? `\n存檔時間：${savedLayout.savedAt}` : ''));
         }
 
         function updateSlotStatusLabel() {
+            const cache = window.fbSlotCache || {};
             let statusText = [];
-            for(let i=1; i<=3; i++) { statusText.push(`槽${i}: ${memorySlots[i] ? '🔴有資料' : '⚪空'}`); }
+            for (let i = 1; i <= 3; i++) { statusText.push(`檔${i}: ${cache[i] ? '🔴有資料' : '⚪空'}`); }
             document.getElementById('slotStatus').innerText = statusText.join(' | ');
+        }
+        window.updateSlotStatusLabel = updateSlotStatusLabel;
+
+        // 🧹 洗白全部：清空舞台站位＋刪除三個線上存檔（名單文字保留），執行前再次確認
+        async function wipeAll() {
+            if (!confirm('⚠️ 確定要「洗白全部」嗎？\n\n將會：\n1. 清空舞台上所有已排的名牌（退回待安排區）\n2. 刪除線上存檔 1、2、3\n\n（右側名單文字會保留）')) return;
+            if (!confirm('🛑 再次確認：線上存檔 1、2、3 將被永久刪除，無法復原。\n\n真的要洗白全部嗎？')) return;
+            resetAllSeats();
+            if (typeof window.fbClearAllSlots === 'function') {
+                try {
+                    await window.fbClearAllSlots();
+                    alert('🧹 已洗白全部：舞台已清空，線上存檔 1、2、3 已刪除。');
+                } catch (e) {
+                    alert('舞台已清空，但刪除線上存檔失敗：' + e.message);
+                }
+            } else {
+                alert('舞台已清空（雲端未連線，線上存檔未刪除）');
+            }
         }
 
         function allowDrop(ev) { ev.preventDefault(); }
@@ -469,6 +536,10 @@
         }
 
         async function exportToExcel() {
+            // 「超過兩排以上請打勾」→ Excel 特化為整合站位圖；Word 完全不受影響
+            if (document.getElementById('multiRowMode') && document.getElementById('multiRowMode').checked) {
+                return exportToExcelStacked();
+            }
             const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
             const examTitle = (document.getElementById('examTitle').value || '').trim() || '展覽名稱';
 
@@ -595,6 +666,130 @@
             });
 
             const fileName = `${examTitle}_揭幕合影圖${getTimestampSuffix()}.xlsx`;
+            try {
+                const buffer = await wb.xlsx.writeBuffer();
+                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert('產生 Excel 檔案時發生錯誤：' + err.message);
+            }
+        }
+
+        // ═══ Excel 特化版（多排整合站位圖）═══
+        // 版面完全比照 2024ET 開幕典禮實際公文格式：
+        // 標題 → 「安排邏輯」＋位置編號列 → 最後一排在最上、第一排在最下（黃底）
+        // A欄＝「第N排\nN位」、B欄＝安排邏輯（留白自行填寫）
+        // 貴賓格＝直書，內容兩段：「單位」＋換行＋「名字 職稱」
+        async function exportToExcelStacked() {
+            const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            const examTitle = (document.getElementById('examTitle').value || '').trim() || '展覽名稱';
+
+            const rowsData = [];
+            let maxSeats = 1;
+            for (let r = 1; r <= rowCount; r++) {
+                const seatCount = rowCapabilities[r - 1] || 9;
+                let rawList = [];
+                for (let s = 1; s <= seatCount; s++) rawList.push(getDynamicSeatText(r, s));
+                if (rawList.every(x => x === '')) continue;
+                rowsData.push({ r, seatCount, rawList });
+                maxSeats = Math.max(maxSeats, seatCount);
+            }
+            if (rowsData.length === 0) { alert('尚未安排任何貴賓座位，無法產生檔案。'); return; }
+            if (typeof ExcelJS === 'undefined') {
+                alert('Excel 產生工具尚未載入完成（需要網路連線），請稍等幾秒後再試一次。');
+                return;
+            }
+
+            // 第一排放最下面、最後一排放最上面
+            rowsData.sort((a, b) => b.r - a.r);
+
+            const thin = { style: 'thin', color: { argb: 'FF000000' } };
+            const fullBorder = { top: thin, bottom: thin, left: thin, right: thin };
+            const F = 'Microsoft JhengHei';
+
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('工作表1', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1 } });
+
+            // 欄寬：A=排標籤、B=安排邏輯、C起=貴賓格
+            ws.getColumn(1).width = 12;
+            ws.getColumn(2).width = 11.5;
+            for (let i = 0; i < maxSeats; i++) ws.getColumn(3 + i).width = 13;
+            const lastCol = 2 + maxSeats;
+
+            // 標題（合併於貴賓欄上方）
+            ws.mergeCells(1, 3, 1, lastCol);
+            let c = ws.getCell(1, 3);
+            c.value = examTitle + ' 合影貴賓站位圖';
+            c.font = { name: F, size: 14, bold: true };
+            c.alignment = { horizontal: 'center', vertical: 'middle' };
+            ws.getRow(1).height = 22;
+            ws.getRow(2).height = 10;
+
+            // 位置編號列：B=安排邏輯，C起 1..N
+            const hdrRow = 3;
+            c = ws.getCell(hdrRow, 2);
+            c.value = '安排邏輯';
+            c.font = { name: F, size: 12, bold: true };
+            c.alignment = { horizontal: 'center', vertical: 'middle' };
+            c.border = fullBorder;
+            for (let i = 0; i < maxSeats; i++) {
+                const cell = ws.getCell(hdrRow, 3 + i);
+                cell.value = i + 1;
+                cell.font = { name: F, size: 12, bold: true };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell.border = fullBorder;
+            }
+            ws.getRow(hdrRow).height = 18;
+
+            let rIdx = hdrRow + 1;
+            rowsData.forEach(({ r, seatCount, rawList }, listIdx) => {
+                const isFirstRow = (r === 1);   // 第一排（最下面那排）→ 黃底
+                const fillColor = isFirstRow ? 'FFFFFF99' : 'FFDCE6F1';
+
+                // A欄：第N排 / N位
+                c = ws.getCell(rIdx, 1);
+                c.value = `第${['','一','二','三','四','五'][r] || r}排\n${seatCount}位`;
+                c.font = { name: F, size: 12, bold: true };
+                c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+                c.border = fullBorder;
+
+                // B欄：安排邏輯（留白，匯出後自行填寫）
+                c = ws.getCell(rIdx, 2);
+                c.value = '';
+                c.font = { name: F, size: 12, bold: true };
+                c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+                c.border = fullBorder;
+
+                // 貴賓格：直書，各排人數不同時水平置中對齊
+                const offset = Math.floor((maxSeats - seatCount) / 2);
+                rawList.forEach((fullName, index) => {
+                    const cell = ws.getCell(rIdx, 3 + offset + index);
+                    cell.border = fullBorder;
+                    cell.alignment = { horizontal: 'center', vertical: 'top', wrapText: true, textRotation: 'vertical' };
+                    if (fullName) {
+                        const parts = fullName.split(' ');
+                        let unit = parts[0] || '', rest = parts.slice(1).join(' ');
+                        if (parts.length === 1) { rest = parts[0]; unit = ''; }
+                        cell.value = unit ? (unit + '\n' + rest) : rest;   // 單位 ⏎ 名字 職稱
+                        cell.font = { name: F, size: 14, bold: true };
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
+                    } else {
+                        cell.value = '';
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+                    }
+                });
+                ws.getRow(rIdx).height = 300;
+                rIdx++;
+            });
+
+            const fileName = `${examTitle}_合影名單暨站位圖_共${rowsData.length}排_${getTimestampSuffix()}.xlsx`;
             try {
                 const buffer = await wb.xlsx.writeBuffer();
                 const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
