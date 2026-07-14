@@ -29,6 +29,8 @@
         .slot-row .btn-sm { width: auto; flex: none; padding: 6px 8px; white-space: nowrap; }
         .slot-name { flex: 1; min-width: 0; padding: 5px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; }
         .slot-dot { flex: none; font-size: 12px; }
+        .slot-del { flex: none; color: #dc2626; font-weight: bold; font-size: 13px; cursor: pointer; padding: 2px 5px; border-radius: 4px; user-select: none; }
+        .slot-del:hover { background: #FEE2E2; }
 
         /* 中欄 */
         .main-col { flex-grow: 1; min-width: 550px; }
@@ -91,11 +93,11 @@
             <div class="config-group">
                 <div class="config-title">3. 線上儲存槽 (雲端同步)</div>
                 <div style="font-size:11px; color:#64748b; margin-bottom:6px;">💡 空格填人名（例：樺），存檔會掛名，避免互相覆蓋。</div>
-                <div class="slot-row"><button onclick="saveToSlot(1)" class="btn-sm btn-save">💾 存 1</button><button onclick="loadFromSlot(1)" class="btn-sm btn-load">📂 讀 1</button><input type="text" id="slotName_1" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_1">⚪</span></div>
-                <div class="slot-row"><button onclick="saveToSlot(2)" class="btn-sm btn-save">💾 存 2</button><button onclick="loadFromSlot(2)" class="btn-sm btn-load">📂 讀 2</button><input type="text" id="slotName_2" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_2">⚪</span></div>
-                <div class="slot-row"><button onclick="saveToSlot(3)" class="btn-sm btn-save">💾 存 3</button><button onclick="loadFromSlot(3)" class="btn-sm btn-load">📂 讀 3</button><input type="text" id="slotName_3" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_3">⚪</span></div>
-                <div class="slot-row"><button onclick="saveToSlot(4)" class="btn-sm btn-save">💾 存 4</button><button onclick="loadFromSlot(4)" class="btn-sm btn-load">📂 讀 4</button><input type="text" id="slotName_4" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_4">⚪</span></div>
-                <div class="slot-row"><button onclick="saveToSlot(5)" class="btn-sm btn-save">💾 存 5</button><button onclick="loadFromSlot(5)" class="btn-sm btn-load">📂 讀 5</button><input type="text" id="slotName_5" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_5">⚪</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(1)" class="btn-sm btn-save">💾 存 1</button><button onclick="loadFromSlot(1)" class="btn-sm btn-load">📂 讀 1</button><input type="text" id="slotName_1" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_1">⚪</span><span class="slot-del" onclick="deleteSlot(1)" title="刪除此存檔">✕</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(2)" class="btn-sm btn-save">💾 存 2</button><button onclick="loadFromSlot(2)" class="btn-sm btn-load">📂 讀 2</button><input type="text" id="slotName_2" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_2">⚪</span><span class="slot-del" onclick="deleteSlot(2)" title="刪除此存檔">✕</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(3)" class="btn-sm btn-save">💾 存 3</button><button onclick="loadFromSlot(3)" class="btn-sm btn-load">📂 讀 3</button><input type="text" id="slotName_3" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_3">⚪</span><span class="slot-del" onclick="deleteSlot(3)" title="刪除此存檔">✕</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(4)" class="btn-sm btn-save">💾 存 4</button><button onclick="loadFromSlot(4)" class="btn-sm btn-load">📂 讀 4</button><input type="text" id="slotName_4" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_4">⚪</span><span class="slot-del" onclick="deleteSlot(4)" title="刪除此存檔">✕</span></div>
+                <div class="slot-row"><button onclick="saveToSlot(5)" class="btn-sm btn-save">💾 存 5</button><button onclick="loadFromSlot(5)" class="btn-sm btn-load">📂 讀 5</button><input type="text" id="slotName_5" class="slot-name" maxlength="8" placeholder="填人名"><span class="slot-dot" id="slotDot_5">⚪</span><span class="slot-del" onclick="deleteSlot(5)" title="刪除此存檔">✕</span></div>
                 <div id="slotStatus" class="slot-status">連線中…</div>
                 <button onclick="wipeAll()" class="btn-sm" style="background:#dc2626; width:100%; margin-top:4px;">🧹 洗白全部</button>
             </div>
@@ -153,6 +155,7 @@ const db = getDatabase(fb);
 const NODE = 'VIP_PHOTO/slots';
 window.fbSaveSlot = (slotId, data) => set(ref(db, NODE + '/' + slotId), data);
 window.fbClearAllSlots = () => remove(ref(db, NODE));
+window.fbDeleteSlot = (slotId) => remove(ref(db, NODE + '/' + slotId));
 window.fbSlotCache = { 1: null, 2: null, 3: null, 4: null, 5: null };
 onValue(ref(db, NODE), snap => {
     const d = snap.val() || {};
@@ -367,6 +370,21 @@ onValue(ref(db, NODE), snap => {
             document.getElementById('slotStatus').innerText = summary.join(' | ');
         }
         window.updateSlotStatusLabel = updateSlotStatusLabel;
+
+        // ✕ 個別刪除某一個線上存檔（不影響舞台與其他檔位）
+        async function deleteSlot(slotId) {
+            const d = (window.fbSlotCache || {})[slotId];
+            if (!d) { alert(`存檔 ${slotId} 本來就是空的。`); return; }
+            const who = d.slotName ? `【${d.slotName}】的存檔` : '未掛名的存檔';
+            if (!confirm(`⚠️ 確定要刪除存檔 ${slotId} 嗎？\n\n這是 ${who}${d.savedAt ? `（${d.savedAt}）` : ''}。\n刪除後無法復原，不影響其他檔位與目前舞台。`)) return;
+            if (typeof window.fbDeleteSlot !== 'function') { alert('⚠️ 雲端尚未連線，請稍候再試'); return; }
+            try {
+                await window.fbDeleteSlot(slotId);
+                alert(`✕ 已刪除存檔 ${slotId}。`);
+            } catch (e) {
+                alert('❌ 刪除失敗：' + e.message);
+            }
+        }
 
         // 🧹 洗白全部：清空舞台站位＋刪除三個線上存檔（名單文字保留），執行前再次確認
         async function wipeAll() {
