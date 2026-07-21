@@ -105,7 +105,7 @@
             <button onclick="resetAllSeats()" class="btn-orange">🔄 重新歸零 / 重置</button>
             <button onclick="exportToExactWord()" class="btn-green">⬇️ 生成公文標準 Word</button>
             <label style="display:flex; align-items:center; gap:8px; margin-top:12px; padding:10px; background:#FEF3C7; border:1px solid #F59E0B; border-radius:6px; font-size:13px; font-weight:bold; color:#92400E; cursor:pointer;">
-                <input type="checkbox" id="multiRowMode" style="width:18px; height:18px; cursor:pointer;">
+                <input type="checkbox" id="multiRowMode" style="width:18px; height:18px; cursor:pointer;" onchange="renderStage()">
                 超過兩排以上請打勾
             </label>
             <div style="font-size:11px; color:#94a3b8; margin-top:4px; line-height:1.5;">打勾後 Excel 會特化為整合站位圖（第一排在最下面、第三排在最上面，格內＝單位＋名字職稱）；Word 不受影響。</div>
@@ -249,13 +249,18 @@ onValue(ref(db, NODE), snap => {
             });
             
             stageMap.innerHTML = '';
-            for (let r = 1; r <= rowCount; r++) {
+            // 多排模式打勾 → 畫布由下往上排（第一排最下、最後一排最上），與 Excel 完全一致
+            const mirror = document.getElementById('multiRowMode') && document.getElementById('multiRowMode').checked && rowCount > 1;
+            const rowSeq = [];
+            for (let r = 1; r <= rowCount; r++) rowSeq.push(r);
+            if (mirror) rowSeq.reverse();
+            for (const r of rowSeq) {
                 const seatCount = rowCapabilities[r - 1] || 9;
                 const protocolLabels = getProtocolLabels(seatCount);
                 const rowDiv = document.createElement('div');
                 rowDiv.className = 'stage-row';
                 rowDiv.id = `row_wrapper_${r}`;
-                rowDiv.innerHTML = `<span class="row-badge">第 ${r} 排</span>`;
+                rowDiv.innerHTML = `<span class="row-badge">第 ${r} 排${mirror && r===1 ? '（最下）' : ''}</span>`;
                 
                 for (let s = 1; s <= seatCount; s++) {
                     const slotId = `slot_r${r}_s${s}`;
