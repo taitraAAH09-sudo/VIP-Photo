@@ -34,13 +34,15 @@
 
         /* 中欄 */
         .main-col { flex-grow: 1; min-width: 550px; }
-        .stage-container { background: #1e293b; padding: 30px; border-radius: 12px; display: flex; flex-direction: column; gap: 25px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.2); min-height: 300px; }
-        .stage-row { display: flex; justify-content: center; gap: 12px; padding: 15px; border: 1px dashed #475569; border-radius: 8px; background: rgba(255,255,255,0.05); position: relative; min-height: 80px; align-items: center; }
+        .stage-container { background: #1e293b; padding: 30px 20px; border-radius: 12px; display: flex; flex-direction: column; gap: 25px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.2); min-height: 300px; overflow-x: auto; }
+        /* 排寬＝內容寬（至少滿版），人數多時整個畫布左右捲動，格子不再被擠扁 */
+        .stage-row { display: flex; justify-content: center; gap: 8px; padding: 18px 12px 12px; border: 1px dashed #475569; border-radius: 8px; background: rgba(255,255,255,0.05); position: relative; min-height: 80px; align-items: stretch; width: max-content; min-width: 100%; box-sizing: border-box; }
         .row-badge { position: absolute; left: 10px; top: -10px; background: #3b82f6; color: white; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: bold; }
         
-        .seat-slot { background: rgba(255, 255, 255, 0.9); border: 2px dashed #94a3b8; width: 140px; height: 85px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 6px; position: relative; padding: 5px; box-sizing: border-box; transition: all 0.2s; }
+        .seat-slot { background: rgba(255, 255, 255, 0.9); border: 2px dashed #94a3b8; flex: 0 0 auto; width: var(--slot-w, 120px); min-height: 124px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; border-radius: 6px; position: relative; padding: 5px; box-sizing: border-box; transition: all 0.2s; }
         .seat-slot:hover { border-color: #3b82f6; background: #ffffff; }
-        .seat-label { font-size: 11px; color: #94a3b8; position: absolute; top: 2px; font-weight: bold; pointer-events: none; }
+        /* 編號放在格子頂端獨立一行，名牌排在它下面，不會再蓋住 */
+        .seat-label { font-size: 12px; color: #64748b; font-weight: bold; pointer-events: none; line-height: 16px; flex: none; }
         
         /* 背板／觀眾席示意條 */
         .bd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
@@ -60,7 +62,7 @@
         /* 姓名標籤 */
         .guest-tag { background: #1e40af; color: white; padding: 6px 10px; margin: 5px; border-radius: 4px; display: block; cursor: move; font-size: 12px; line-height: 1.4; box-shadow: 0 2px 4px rgba(0,0,0,0.15); user-select: none; }
         .guest-tag:active { opacity: 0.7; }
-        .seat-slot .guest-tag { width: 95%; text-align: center; margin: 0; padding: 4px; font-size: 11px; background: #0284c7; }
+        .seat-slot .guest-tag { width: 100%; box-sizing: border-box; text-align: center; margin: 0; padding: 6px 4px; font-size: 12px; background: #0284c7; flex: 1; display: flex; flex-direction: column; justify-content: center; word-break: break-all; }
         
         button { color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: bold; width: 100%; transition: background 0.2s; }
         .btn-green { background: #10b981; margin-top: 10px; font-size: 16px; box-shadow: 0 4px 6px rgba(16,185,129,0.2); }
@@ -348,8 +350,21 @@ onValue(ref(db, NODE), snap => {
                 }
                 stageMap.appendChild(rowDiv);
             }
+            fitSlotWidth();
             updateBackdropUI();
         }
+
+        // 格寬自動：畫布放得下就撐大（最多 140px），人數太多時最少保持 88px，超出就左右捲動
+        function fitSlotWidth() {
+            const stageMap = document.getElementById('stageMap');
+            const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            let maxSeats = 1;
+            for (let r = 1; r <= rowCount; r++) maxSeats = Math.max(maxSeats, rowCapabilities[r - 1] || 9);
+            const inner = stageMap.clientWidth - 40 - 24 - 2;   // 畫布左右 padding + 排內 padding + 框線
+            const w = Math.floor((inner - (maxSeats - 1) * 8) / maxSeats);
+            stageMap.style.setProperty('--slot-w', Math.max(88, Math.min(140, w)) + 'px');
+        }
+        window.addEventListener('resize', () => { if (document.getElementById('stageMap')) fitSlotWidth(); });
 
         function generateTags() {
             const pool = document.getElementById('pool');
