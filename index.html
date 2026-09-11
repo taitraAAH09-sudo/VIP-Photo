@@ -42,6 +42,16 @@
         .seat-slot:hover { border-color: #3b82f6; background: #ffffff; }
         .seat-label { font-size: 11px; color: #94a3b8; position: absolute; top: 2px; font-weight: bold; pointer-events: none; }
         
+        /* 背板／觀眾席示意條 */
+        .bd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+        .bd-toggle { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; flex: none; }
+        .bd-toggle button { width: auto; padding: 5px 12px; font-size: 12px; font-weight: bold; border-radius: 0; background: #fff; color: #475569; }
+        .bd-toggle button.on { background: #7c2d12; color: #fff; }
+        .bd-bar { margin: 8px auto; width: 60%; min-width: 260px; text-align: center; border-radius: 6px; padding: 8px 0; font-weight: bold; letter-spacing: 12px; cursor: pointer; user-select: none; transition: all 0.2s; }
+        .bd-bar.backdrop { background: linear-gradient(#9a3412, #7c2d12); color: #fff; font-size: 16px; box-shadow: 0 3px 0 #431407; }
+        .bd-bar.audience { background: #f8fafc; color: #94a3b8; font-size: 13px; border: 2px dashed #cbd5e1; }
+        .bd-bar.audience:hover { border-color: #9a3412; color: #9a3412; }
+
         /* 右欄 */
         .right-col { width: 340px; flex-shrink: 0; }
         textarea { width: 100%; height: 180px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; font-size: 12px; resize: none; line-height: 1.4; }
@@ -108,14 +118,25 @@
                 <input type="checkbox" id="multiRowMode" style="width:18px; height:18px; cursor:pointer;" onchange="renderStage()">
                 超過兩排以上請打勾
             </label>
-            <div style="font-size:11px; color:#94a3b8; margin-top:4px; line-height:1.5;">打勾後 Excel 會特化為整合站位圖（第一排在最下面、第三排在最上面，格內＝單位＋名字職稱）；Word 不受影響。</div>
+            <div style="font-size:11px; color:#94a3b8; margin-top:4px; line-height:1.5;">打勾後 Excel 會特化為整合站位圖（第一排靠觀眾席、最後一排靠背板，跟著「背板在上／在下」連動，格內＝單位＋名字職稱）；Word 不受影響。</div>
             <button onclick="exportToExcel()" class="btn-green" style="background:#0284c7;">⬇️ 生成 Excel 檔</button>
         </div>
 
         <div class="panel main-col">
-            <div style="font-weight: bold; margin-bottom: 5px; color: #1e293b;">4. 舞台站位可拖曳大畫布 (所見即所得)</div>
-            <div style="font-size: 12px; color: #475569; margin-bottom: 10px;">請直接按照最終希望在 Word 上看到的由左至右順序排定。</div>
+            <div class="bd-head">
+                <div>
+                    <div style="font-weight: bold; margin-bottom: 5px; color: #1e293b;">4. 舞台站位可拖曳大畫布 (所見即所得)</div>
+                    <div style="font-size: 12px; color: #475569;">請直接按照最終希望在 Word 上看到的由左至右順序排定。</div>
+                    <div id="bdHint" style="font-size: 12px; color: #9a3412; margin-top: 3px;"></div>
+                </div>
+                <div class="bd-toggle">
+                    <button id="bdBtnTop" onclick="setBackdrop('top')">背板在上</button>
+                    <button id="bdBtnBottom" onclick="setBackdrop('bottom')">背板在下</button>
+                </div>
+            </div>
+            <div id="bdBarTop" class="bd-bar" onclick="setBackdrop('top')"></div>
             <div id="stageMap" class="stage-container"></div>
+            <div id="bdBarBottom" class="bd-bar" onclick="setBackdrop('bottom')"></div>
         </div>
 
         <div class="panel right-col">
@@ -169,11 +190,22 @@ onValue(ref(db, NODE), snap => {
     <script>
         // 核心全域變數，預設各排人數為 9
         let rowCapabilities = [9, 9, 9, 9, 9]; 
+        // 背板位置：'top'＝背板在上（從觀眾席看，1 的右手在畫面左側）；'bottom'＝背板在下（左右鏡像，1 的右手在畫面右側）
+        let backdropPos = 'top';
 
         // 依「中間為1，向外交錯左右」的禮賓排序規則，計算每個實體座位(s)對應的貴賓序號
         // 奇數：正中間=1，1的左邊=2，右邊=3，再左=4，再右=5...
         // 偶數：中間偏左=1，中間偏右=2，1的左邊=3，2的右邊=4，再左=5，再右=6...
         function getProtocolLabels(seatCount) {
+            const base = getProtocolLabelsBase(seatCount);
+            if (backdropPos !== 'bottom') return base;
+            // 背板在下 → 整排左右鏡像
+            const mirrored = new Array(seatCount + 1).fill(0);
+            for (let s = 1; s <= seatCount; s++) mirrored[s] = base[seatCount + 1 - s];
+            return mirrored;
+        }
+
+        function getProtocolLabelsBase(seatCount) {
             const labelAtSlot = new Array(seatCount + 1).fill(0); // 1-based，index=實體座位編號
             if (seatCount <= 0) return labelAtSlot;
             let left, right, rank = 1;
@@ -238,6 +270,42 @@ onValue(ref(db, NODE), snap => {
             renderStage();
         }
 
+        // 切換背板上／下：已排好的貴賓跟著「位置編號」走（左右鏡像搬過去），所以 1 號還是 1 號
+        function setBackdrop(pos) {
+            if (pos !== 'top' && pos !== 'bottom') pos = 'top';
+            if (pos === backdropPos) { updateBackdropUI(); return; }
+            const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
+            const moves = [];
+            for (let r = 1; r <= rowCount; r++) {
+                const seatCount = rowCapabilities[r - 1] || 9;
+                for (let s = 1; s <= seatCount; s++) {
+                    const tag = document.querySelector(`#slot_r${r}_s${s} .guest-tag`);
+                    if (tag) moves.push([tag, `slot_r${r}_s${seatCount + 1 - s}`]);
+                }
+            }
+            moves.forEach(([tag]) => tag.remove());
+            moves.forEach(([tag, target]) => { const el = document.getElementById(target); if (el) el.appendChild(tag); });
+            backdropPos = pos;
+            renderStage();
+        }
+
+        function updateBackdropUI() {
+            const top = backdropPos === 'top';
+            const barTop = document.getElementById('bdBarTop');
+            const barBottom = document.getElementById('bdBarBottom');
+            barTop.className = 'bd-bar ' + (top ? 'backdrop' : 'audience');
+            barTop.textContent = top ? '背板' : '觀眾席';
+            barTop.title = top ? '' : '點一下：把背板移到上面';
+            barBottom.className = 'bd-bar ' + (top ? 'audience' : 'backdrop');
+            barBottom.textContent = top ? '觀眾席' : '背板';
+            barBottom.title = top ? '點一下：把背板移到下面' : '';
+            document.getElementById('bdBtnTop').classList.toggle('on', top);
+            document.getElementById('bdBtnBottom').classList.toggle('on', !top);
+            document.getElementById('bdHint').textContent = top
+                ? '▲ 背板在上：從觀眾席看，1 的右手在畫面左側'
+                : '▼ 背板在下：左右已鏡像，1 的右手在畫面右側';
+        }
+
         function renderStage() {
             const stageMap = document.getElementById('stageMap');
             const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
@@ -249,18 +317,20 @@ onValue(ref(db, NODE), snap => {
             });
             
             stageMap.innerHTML = '';
-            // 多排模式打勾 → 畫布由下往上排（第一排最下、最後一排最上），與 Excel 完全一致
+            // 多排模式打勾 → 第一排靠觀眾席、最後一排靠背板，與 Excel 完全一致
+            //   背板在上：第一排在最下；背板在下：第一排在最上
             const mirror = document.getElementById('multiRowMode') && document.getElementById('multiRowMode').checked && rowCount > 1;
             const rowSeq = [];
             for (let r = 1; r <= rowCount; r++) rowSeq.push(r);
-            if (mirror) rowSeq.reverse();
+            if (mirror && backdropPos === 'top') rowSeq.reverse();
+            const firstRowTag = mirror ? (backdropPos === 'top' ? '（最下）' : '（最上）') : '';
             for (const r of rowSeq) {
                 const seatCount = rowCapabilities[r - 1] || 9;
                 const protocolLabels = getProtocolLabels(seatCount);
                 const rowDiv = document.createElement('div');
                 rowDiv.className = 'stage-row';
                 rowDiv.id = `row_wrapper_${r}`;
-                rowDiv.innerHTML = `<span class="row-badge">第 ${r} 排${mirror && r===1 ? '（最下）' : ''}</span>`;
+                rowDiv.innerHTML = `<span class="row-badge">第 ${r} 排${r===1 ? firstRowTag : ''}</span>`;
                 
                 for (let s = 1; s <= seatCount; s++) {
                     const slotId = `slot_r${r}_s${s}`;
@@ -278,6 +348,7 @@ onValue(ref(db, NODE), snap => {
                 }
                 stageMap.appendChild(rowDiv);
             }
+            updateBackdropUI();
         }
 
         function generateTags() {
@@ -323,6 +394,7 @@ onValue(ref(db, NODE), snap => {
                 assignments: {},
                 nameList: document.getElementById('nameInput').value,
                 examTitle: document.getElementById('examTitle').value,
+                backdropPos: backdropPos,
                 slotName: slotName,
                 savedAt: new Date().toLocaleString('zh-TW', { hour12: false })
             };
@@ -347,6 +419,8 @@ onValue(ref(db, NODE), snap => {
             rowCapabilities = [...(savedLayout.capabilities || [9,9,9,9,9])];
             if (savedLayout.examTitle !== undefined) document.getElementById('examTitle').value = savedLayout.examTitle;
             if (savedLayout.nameList !== undefined) document.getElementById('nameInput').value = savedLayout.nameList;
+            // 存檔裡的座位是實體格位，直接還原背板方向即可（舊存檔沒有此欄 → 背板在上）
+            backdropPos = savedLayout.backdropPos === 'bottom' ? 'bottom' : 'top';
             initRowsControl();
             generateTags();
             const poolTags = Array.from(document.querySelectorAll('#pool .guest-tag'));
@@ -488,7 +562,7 @@ onValue(ref(db, NODE), snap => {
                 allRowsHtml += `
                     <div class="page-break">
                         ${rowCount > 1 ? `<div class="row-label">第 ${r} 排</div>` : ''}
-                        <div class="backboard-indicator">背板</div>
+                        <div class="ind-above">${backdropPos === 'top' ? '背板' : '觀眾席'}</div>
                         <center>
                         <table border="1" cellspacing="0" cellpadding="2" align="center" style="table-layout:fixed; width:${seatCount * 1.8}cm; margin:0 auto;">
                             <colgroup>${colgroup}</colgroup>
@@ -497,7 +571,7 @@ onValue(ref(db, NODE), snap => {
                             <tr>${unitRowCells}</tr>
                         </table>
                         </center>
-                        <div class="audience-indicator">觀眾席</div>
+                        <div class="ind-below">${backdropPos === 'top' ? '觀眾席' : '背板'}</div>
                     </div>
                     <br><br>
                 `;
@@ -524,8 +598,8 @@ onValue(ref(db, NODE), snap => {
                         .title-sub { font-size: 18pt; font-weight: bold; text-align: center; margin-bottom: 25px; }
                         .row-label { text-align: center; font-size: 12pt; font-weight: bold; margin-bottom: 8px; }
                         
-                        .backboard-indicator { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 15px; letter-spacing: 10px; }
-                        .audience-indicator { text-align: center; font-size: 14pt; font-weight: bold; margin-top: 15px; letter-spacing: 10px; }
+                        .ind-above { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 15px; letter-spacing: 10px; }
+                        .ind-below { text-align: center; font-size: 14pt; font-weight: bold; margin-top: 15px; letter-spacing: 10px; }
                         
                         table { border-collapse: collapse; table-layout: fixed; margin: 0 auto; }
                         
@@ -643,10 +717,10 @@ onValue(ref(db, NODE), snap => {
                     rIdx++;
                 }
 
-                // 背板
+                // 上方標示（背板在上→背板；背板在下→觀眾席）
                 ws.mergeCells(rIdx, 1, rIdx, maxSeats);
                 c = ws.getCell(rIdx, 1);
-                c.value = '背板';
+                c.value = backdropPos === 'top' ? '背板' : '觀眾席';
                 c.font = { name: 'Microsoft JhengHei', size: 14, bold: true };
                 c.alignment = { horizontal: 'center', vertical: 'middle' };
                 rIdx++;
@@ -695,10 +769,10 @@ onValue(ref(db, NODE), snap => {
                 ws.getRow(unitRow).height = ROW_H_PT;
                 rIdx += 2;
 
-                // 觀眾席
+                // 下方標示
                 ws.mergeCells(rIdx, 1, rIdx, maxSeats);
                 c = ws.getCell(rIdx, 1);
-                c.value = '觀眾席';
+                c.value = backdropPos === 'top' ? '觀眾席' : '背板';
                 c.font = { name: 'Microsoft JhengHei', size: 14, bold: true };
                 c.alignment = { horizontal: 'center', vertical: 'middle' };
                 rIdx++;
@@ -748,8 +822,9 @@ onValue(ref(db, NODE), snap => {
                 return;
             }
 
-            // 第一排放最下面、最後一排放最上面
-            rowsData.sort((a, b) => b.r - a.r);
+            // 第一排靠觀眾席：背板在上 → 第一排放最下面；背板在下 → 第一排放最上面
+            if (backdropPos === 'top') rowsData.sort((a, b) => b.r - a.r);
+            else rowsData.sort((a, b) => a.r - b.r);
 
             const thin = { style: 'thin', color: { argb: 'FF000000' } };
             const fullBorder = { top: thin, bottom: thin, left: thin, right: thin };
@@ -773,8 +848,21 @@ onValue(ref(db, NODE), snap => {
             ws.getRow(1).height = 22;
             ws.getRow(2).height = 10;
 
+            // 背板／觀眾席標示條（合併於貴賓欄）
+            const putIndicator = (row, text) => {
+                ws.mergeCells(row, 3, row, lastCol);
+                const ic = ws.getCell(row, 3);
+                ic.value = text;
+                ic.font = { name: F, size: 14, bold: true };
+                ic.alignment = { horizontal: 'center', vertical: 'middle' };
+                ic.border = fullBorder;
+                if (text === '背板') ic.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+                ws.getRow(row).height = 24;
+            };
+            putIndicator(3, backdropPos === 'top' ? '背板' : '觀眾席');
+
             // 位置編號列：B=安排邏輯，C起 1..N
-            const hdrRow = 3;
+            const hdrRow = 4;
             c = ws.getCell(hdrRow, 2);
             c.value = '安排邏輯';
             c.font = { name: F, size: 12, bold: true };
@@ -791,7 +879,7 @@ onValue(ref(db, NODE), snap => {
 
             let rIdx = hdrRow + 1;
             rowsData.forEach(({ r, seatCount, rawList }, listIdx) => {
-                const isFirstRow = (r === 1);   // 第一排（最下面那排）→ 黃底
+                const isFirstRow = (r === 1);   // 第一排（靠觀眾席那排）→ 黃底
                 const fillColor = isFirstRow ? 'FFFFFF99' : 'FFDCE6F1';
 
                 // A欄：第N排 / N位
@@ -829,6 +917,7 @@ onValue(ref(db, NODE), snap => {
                 ws.getRow(rIdx).height = 300;
                 rIdx++;
             });
+            putIndicator(rIdx, backdropPos === 'top' ? '觀眾席' : '背板');
 
             const fileName = `${examTitle}_合影名單暨站位圖_共${rowsData.length}排_${getTimestampSuffix()}.xlsx`;
             try {
