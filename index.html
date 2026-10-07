@@ -35,14 +35,21 @@
         /* 中欄 */
         .main-col { flex-grow: 1; min-width: 550px; }
         .stage-container { background: #1e293b; padding: 30px 20px; border-radius: 12px; display: flex; flex-direction: column; gap: 25px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.2); min-height: 300px; overflow-x: auto; }
-        /* 排寬＝內容寬（至少滿版），人數多時整個畫布左右捲動，格子不再被擠扁 */
-        .stage-row { display: flex; justify-content: center; gap: 8px; padding: 18px 12px 12px; border: 1px dashed #475569; border-radius: 8px; background: rgba(255,255,255,0.05); position: relative; min-height: 80px; align-items: stretch; width: max-content; min-width: 100%; box-sizing: border-box; }
+        /* 排寬＝內容寬（至少滿版）；格寬由 fitSlotWidth 自動算，20 格也塞得進畫布 */
+        .stage-row { display: flex; justify-content: center; gap: var(--slot-gap, 8px); padding: 18px 12px 12px; border: 1px dashed #475569; border-radius: 8px; background: rgba(255,255,255,0.05); position: relative; min-height: 80px; align-items: stretch; width: max-content; min-width: 100%; box-sizing: border-box; }
         .row-badge { position: absolute; left: 10px; top: -10px; background: #3b82f6; color: white; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: bold; }
         
         .seat-slot { background: rgba(255, 255, 255, 0.9); border: 2px dashed #94a3b8; flex: 0 0 auto; width: var(--slot-w, 120px); min-height: 124px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; border-radius: 6px; position: relative; padding: 5px; box-sizing: border-box; transition: all 0.2s; }
         .seat-slot:hover { border-color: #3b82f6; background: #ffffff; }
         /* 編號放在格子頂端獨立一行，名牌排在它下面，不會再蓋住 */
-        .seat-label { font-size: 12px; color: #64748b; font-weight: bold; pointer-events: none; line-height: 16px; flex: none; }
+        .seat-label { font-size: 12px; color: #64748b; font-weight: bold; pointer-events: none; line-height: 16px; flex: none; white-space: nowrap; }
+
+        /* 人數多（>12）時的緊湊模式：縮小留白、格距、字級，編號只顯示數字 */
+        .stage-container.dense { padding: 24px 10px; }
+        .stage-container.dense .stage-row { padding: 18px 6px 12px; }
+        .stage-container.dense .seat-slot { padding: 3px; gap: 3px; }
+        .stage-container.dense .seat-label .pfx { display: none; }
+        .stage-container.dense .seat-slot .guest-tag { font-size: 10px; padding: 4px 1px; line-height: 1.25; }
         
         /* 背板／觀眾席示意條 */
         .bd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
@@ -77,7 +84,7 @@
 <body>
 
     <h2>🎭 貴賓開幕站位產生器 (自訂人数+橫排修正版)</h2>
-    <div class="hint">※ 支援隨時自訂每一排人數。已強制修正 Word 直排錯誤。網頁拖曳順序與 Word 完全一致。</div>
+    <div class="hint">※ 支援隨時自訂每一排人數（每排最多 20 人）。已強制修正 Word 直排錯誤。網頁拖曳順序與 Word 完全一致。</div>
 
     <div class="workspace">
         
@@ -190,6 +197,8 @@ onValue(ref(db, NODE), snap => {
 });
 </script>
     <script>
+        // 每排人數上限
+        const MAX_SEATS = 20;
         // 核心全域變數，預設各排人數為 9
         let rowCapabilities = [9, 9, 9, 9, 9]; 
         // 背板位置：'top'＝背板在上（從觀眾席看，1 的右手在畫面左側）；'bottom'＝背板在下（左右鏡像，1 的右手在畫面右側）
@@ -244,7 +253,7 @@ onValue(ref(db, NODE), snap => {
             initRowsControl(); 
         }
 
-        // 🎯 重新補回：動態產生並維持「每排人數隨時改」的左側輸入框
+        // 🎯 動態產生並維持「每排人數隨時改」的左側輸入框
         function initRowsControl() {
             const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
             const configContainer = document.getElementById('rowPeopleConfig');
@@ -256,18 +265,21 @@ onValue(ref(db, NODE), snap => {
                 div.className = 'config-row';
                 div.innerHTML = `
                     <label>第 ${i} 排人數：</label>
-                    <input type="number" id="peo_input_${i}" value="${currentVal}" min="1" max="15" oninput="handlePeopleCountChange(${i})">
+                    <input type="number" id="peo_input_${i}" value="${currentVal}" min="1" max="${MAX_SEATS}" oninput="handlePeopleCountChange(${i})">
                 `;
                 configContainer.appendChild(div);
             }
             renderStage();
         }
 
-        // 🎯 重新補回：當你隨時修改某一排人數（例如 9 改成 5 或 10）時的重繪事件
+        // 🎯 隨時修改某一排人數時的重繪事件（限制在 1～20）
         function handlePeopleCountChange(rowIndex) {
             const inputEl = document.getElementById(`peo_input_${rowIndex}`);
             if (inputEl) { 
-                rowCapabilities[rowIndex - 1] = parseInt(inputEl.value) || 1; 
+                let v = parseInt(inputEl.value) || 1;
+                if (v > MAX_SEATS) { v = MAX_SEATS; inputEl.value = v; }
+                if (v < 1) v = 1;
+                rowCapabilities[rowIndex - 1] = v; 
             }
             renderStage();
         }
@@ -341,7 +353,7 @@ onValue(ref(db, NODE), snap => {
                     slot.id = slotId;
                     slot.setAttribute('ondragover', 'allowDrop(event)');
                     slot.setAttribute('ondrop', 'drop(event)');
-                    slot.innerHTML = `<span class="seat-label">位置 ${protocolLabels[s]}</span>`;
+                    slot.innerHTML = `<span class="seat-label"><span class="pfx">位置 </span>${protocolLabels[s]}</span>`;
                     
                     if (savedSeats[slotId]) { 
                         slot.appendChild(savedSeats[slotId]); 
@@ -354,15 +366,22 @@ onValue(ref(db, NODE), snap => {
             updateBackdropUI();
         }
 
-        // 格寬自動：畫布放得下就撐大（最多 140px），人數太多時最少保持 88px，超出就左右捲動
+        // 格寬自動：依最多人的那一排把格子縮到剛好塞進畫布（最寬 140px、最窄 40px）
+        // 超過 12 人自動切緊湊模式（縮小留白、格距、字級），20 格也不用左右捲
         function fitSlotWidth() {
             const stageMap = document.getElementById('stageMap');
             const rowCount = parseInt(document.getElementById('rowCount').value) || 1;
             let maxSeats = 1;
             for (let r = 1; r <= rowCount; r++) maxSeats = Math.max(maxSeats, rowCapabilities[r - 1] || 9);
-            const inner = stageMap.clientWidth - 40 - 24 - 2;   // 畫布左右 padding + 排內 padding + 框線
-            const w = Math.floor((inner - (maxSeats - 1) * 8) / maxSeats);
-            stageMap.style.setProperty('--slot-w', Math.max(88, Math.min(140, w)) + 'px');
+            const dense = maxSeats > 12;
+            stageMap.classList.toggle('dense', dense);
+            const gap = dense ? 4 : 8;
+            const padStage = dense ? 20 : 40;   // 畫布左右 padding 合計
+            const padRow = dense ? 12 : 24;     // 排內左右 padding 合計
+            const inner = stageMap.clientWidth - padStage - padRow - 2;   // 再扣框線
+            const w = Math.floor((inner - (maxSeats - 1) * gap) / maxSeats);
+            stageMap.style.setProperty('--slot-gap', gap + 'px');
+            stageMap.style.setProperty('--slot-w', Math.max(40, Math.min(140, w)) + 'px');
         }
         window.addEventListener('resize', () => { if (document.getElementById('stageMap')) fitSlotWidth(); });
 
@@ -503,8 +522,10 @@ onValue(ref(db, NODE), snap => {
             ev.preventDefault();
             var data = ev.dataTransfer.getData("text");
             var target = ev.target;
-            if (!target.classList.contains('seat-slot') && target.id !== 'pool') { target = target.parentElement; }
+            // 往上找到格子或待安排區（編號文字內多了一層 span，所以用 closest）
+            target = target.closest('.seat-slot, #pool') || target;
             if (target.classList.contains('seat-slot') && target.getElementsByClassName('guest-tag').length > 0) { return; }
+            if (!target.classList.contains('seat-slot') && target.id !== 'pool') { return; }
             target.appendChild(document.getElementById(data));
         }
 
